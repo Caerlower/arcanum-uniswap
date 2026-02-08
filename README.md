@@ -1,113 +1,224 @@
-# PrivacySwapHook
+# Arcanum
 
-Privacy-aware swap execution system on Uniswap v4. Intent-based execution with timing privacy, routing privacy, and liquidity update shielding.
+**Arcanum** is a privacy-aware swap execution layer built on **Uniswap v4 hooks**.
 
-## References
+It introduces **intent-based swaps** that reduce unnecessary information leakage around **when**, **where**, and **how** trades execute — without breaking composability, auditability, or onchain verifiability.
 
-- [Uniswap v4 Overview](https://docs.uniswap.org/contracts/v4/overview) – Hooks, dynamic fees, singleton design, flash accounting
-- [v4-template](https://github.com/uniswapfoundation/v4-template) – Template for writing Uniswap v4 Hooks (HookMiner, deployment)
-- [OpenZeppelin Uniswap Hooks](https://docs.openzeppelin.com/uniswap-hooks) – BaseHook, fee hooks, sandwich protection
-- [Uniswap v4 Security Foundations](https://docs.uniswap.org/contracts/v4/overview) – Hook security, NoOp attacks, delta accounting
-- [Uniswap Aggregator Hooks](https://github.com/Uniswap/uniswap-ai) – Hook patterns, protocol integration
-- [Unichain Docs](https://docs.unichain.org/docs) – Deployment, routing, bundles, contract addresses
+Instead of executing swaps immediately and predictably, users submit **swap intents** that are executed later within onchain-enforced constraints. Execution timing, routing, and liquidity behavior are controlled by protocol rules, making trades harder to front-run or sandwich.
 
-## Features
+---
 
-- **Intent-based swaps**: Execution windows (block ranges), min delay
-- **Timing privacy**: Non-deterministic execution timing
-- **Routing privacy**: Multiple allowed pools; executor chooses path
-- **Liquidity shielding**: LP cooldown before removal
-- **MEV-aware**: No delta-return permissions; router allowlisting
+## Why Arcanum
 
-## Build
+Onchain swaps leak more information than users realize.
 
-```bash
-forge build
-forge test
+Every swap reveals:
+
+* **When** a user intends to trade
+* **Where** liquidity will be accessed
+* **How** liquidity is expected to react
+
+This information is routinely exploited by MEV searchers through:
+
+* front-running
+* sandwiching
+* liquidity sniping
+* reactive LP behavior
+
+Arcanum reduces this leakage **without hiding state or relying on offchain trust**.
+
+---
+
+## What Arcanum Is (and Is Not)
+
+**Arcanum is:**
+
+* A rule-based execution layer on top of Uniswap v4
+* Fully onchain and verifiable
+* Compatible with existing liquidity and tooling
+* Designed to *reduce signal*, not hide state
+
+**Arcanum is not:**
+
+* A private DEX
+* A dark pool
+* An order book or matching engine
+* A zero-knowledge system
+
+Privacy comes from **execution uncertainty**, not secrecy.
+
+---
+
+## Core Features
+
+### Intent-Based Swaps
+
+Users submit swap intents instead of immediate swaps.
+
+Each intent defines:
+
+* An execution window (block range)
+* A minimum delay before execution
+* A minimum acceptable output
+* A set of allowed pools
+
+Anyone may execute an intent once its constraints are satisfied.
+
+---
+
+### Timing Privacy
+
+* Swaps do **not** execute at submission time
+* Execution occurs within a flexible block window
+* Exact execution block is unknown at submission
+
+This removes deterministic timing signals that searchers rely on.
+
+---
+
+### Routing Privacy
+
+* Intents specify multiple allowed pools
+* The execution route is selected **at execution time**
+* Routing choice is enforced by hooks, not executors
+
+This prevents reliable pre-simulation of price impact.
+
+---
+
+### Liquidity Shielding
+
+* Liquidity changes are controlled via hooks
+* Cooldowns prevent instant LP reactions
+* Reduces liquidity sniping and reactive MEV
+
+LP behavior becomes less exploitable without restricting participation.
+
+---
+
+### MEV-Aware by Design
+
+* No trusted executors
+* No offchain solvers
+* No delta-return permissions
+* Router allowlisting enforced at the hook level
+
+All execution rules are enforced onchain.
+
+---
+
+## Architecture Overview
+
+Arcanum is built entirely using **Uniswap v4 primitives**.
+
+### Key Components
+
+* **PrivacySwapHook**
+  Enforces execution windows, routing rules, and liquidity cooldowns.
+
+* **IntentStore**
+  Stores user intents and execution constraints.
+
+* **PrivacySwapExecutor**
+  Executes one or more intents via `PoolManager.swap`.
+
+* **Swap Router**
+  Thin router that forwards swaps into the Uniswap v4 `PoolManager`.
+
+* **Batch Liquidity Router**
+  Adds and removes liquidity under hook-enforced rules.
+
+All swaps flow through the Uniswap v4 `PoolManager` and are validated by the same hook instance.
+
+---
+
+## Execution Model
+
+1. User submits a swap intent onchain
+2. Intent becomes executable after its delay
+3. Any executor may execute the intent within the window
+4. Routing and timing are enforced by hooks
+5. Swap settles atomically and verifiably
+
+Executors **cannot**:
+
+* execute early
+* bypass routing rules
+* choose execution timing arbitrarily
+
+---
+
+## Example Swap Intent
+
+```solidity
+SwapIntent({
+    startBlock: block.number + 5,
+    endBlock: block.number + 20,
+    minDelayBlocks: 2,
+    allowedPoolIds: [...],
+    minAmountOut: 1e18,
+    salt: bytes32(0)
+});
 ```
 
-## CLI – Real Swap Testing
+---
 
-Run real swaps locally or on testnet:
-
-### Unichain Sepolia (Testnet)
-
-1. **Get testnet tokens**: See [Funding a Wallet](https://docs.unichain.org/docs/getting-started/get-funds-on-unichain). Bridge ETH from Sepolia to Unichain Sepolia, then swap for WETH/USDC on [Uniswap](https://app.uniswap.org).
-2. **Run full flow**:
-   ```bash
-   PRIVATE_KEY=0x... ./cli.sh testnet
-   ```
-   This deploys the hook, routers, creates a WETH/USDC pool, adds liquidity, and executes both simple and privacy swaps.
+## Developer Experience
 
 ### Local (Anvil)
 
 ```bash
-# Full local flow (Anvil): deploy stack + init pool + liquidity + swap
-anvil &                              # Terminal 1
-./cli.sh local                       # Terminal 2
-
-# Execute swap against existing deployment
-export POOL_MANAGER=0x... SWAP_ROUTER=0x... TOKEN0=0x... TOKEN1=0x... HOOK=0x...
-./cli.sh swap
+anvil
+./cli.sh local
 ```
 
-| Command | Description |
-|---------|-------------|
-| `./cli.sh local` | Full flow on local Anvil |
-| `./cli.sh testnet` | Full flow on Unichain Sepolia (WETH/USDC, needs bridge first) |
-| `./cli.sh testnet-privacy` | Privacy flow: submit intent → deferred execute |
-| `./cli.sh deploy-swap` | Deploy fresh contracts + liquidity (run before each swap when you're the only LP) |
-| `./cli.sh swap`  | Execute swap (requires env vars from `local`/`testnet` output) |
-| `./cli.sh deploy`| Deploy hook only to Unichain Sepolia |
+Supports:
 
-Env vars: `RPC_URL`, `PRIVATE_KEY`, `SWAP_AMOUNT`, `USE_PRIVACY` (true/false for swap).
+* Full deployment
+* Pool creation
+* Multi-LP simulation
+* Adversarial liquidity testing
+* Batched and deferred swaps
 
-**Unichain Sepolia Explorer** (chain 1301 – not Ethereum Sepolia):
-- [Uniscan](https://sepolia.uniscan.xyz/) | [Blockscout](https://unichain-sepolia.blockscout.com/)
+---
 
-**Broadcast & cache files** (after `./cli.sh testnet`):
-- `broadcast/TestnetSwap.s.sol/1301/run-latest.json` – transaction hashes, contract addresses, calldata. Used by Foundry to verify contracts, replay deployments, and for tooling.
-- `cache/TestnetSwap.s.sol/1301/run-latest.json` – RPC endpoints and derived metadata. Used for replay/resume. Cache is gitignored.
-
-## Deploy (Unichain)
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for Unichain contract addresses.
+### Unichain Sepolia
 
 ```bash
-# Unichain Sepolia
-forge script script/DeployPrivacySwapHook.s.sol --rpc-url https://sepolia.unichain.org --broadcast
+PRIVATE_KEY=0x... ./cli.sh testnet
 ```
 
-## SwapIntent Encoding
+Supports:
 
-```solidity
-SwapIntent memory intent = SwapIntent({
-    startBlock: uint64(block.number + 5),
-    endBlock: uint64(block.number + 20),
-    minDelayBlocks: 2,
-    createdAtBlock: 0,
-    allowedPoolIds: [poolId1, poolId2, poolId3, poolId4],
-    allowedPoolCount: 2,
-    minAmountOut: 1e18,
-    salt: bytes32(0)
-});
-bytes memory hookData = abi.encode(intent);
-```
+* Real WETH / USDC pools
+* Multi-LP liquidity
+* Intent-based swaps
+* Onchain execution and routing constraints
 
-## Unichain eth_sendBundle
+---
 
-The execution window aligns with [Unichain's eth_sendBundle](https://docs.unichain.org/docs/technical-information/advanced-txn):
+## What Arcanum Improves
 
-```javascript
-const bundleParams = {
-  txs: [signedSwapTx],
-  minBlockNumber: `0x${(currentBlock + 5).toString(16)}`,
-  maxBlockNumber: `0x${(currentBlock + 20).toString(16)}`
-};
-// Revert protection: no gas if swap reverts
-const txHash = await provider.send('eth_sendBundle', [bundleParams]);
-```
+| Signal                | Reduced? | How                        |
+| --------------------- | -------- | -------------------------- |
+| Execution timing      | ✅        | Deferred execution windows |
+| Route predictability  | ✅        | Execution-time routing     |
+| LP reaction speed     | ✅        | Hook-enforced cooldowns    |
+| Onchain verifiability | ✅        | Fully preserved            |
 
-## License
+---
 
-MIT
+## Known Limitations
+
+* Does not hide total volume or final price
+* Does not prevent all MEV (nothing does)
+* Privacy improves with multiple intents and pools
+
+Arcanum is a **privacy-aware execution primitive**, not a silver bullet.
+
+---
+
+## One-Liner
+
+> **Arcanum brings intent-based privacy to Uniswap v4 swaps — reducing when, where, and how execution signals leak, without breaking composability.**
+
