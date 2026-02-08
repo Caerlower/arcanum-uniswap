@@ -28,7 +28,7 @@ contract DeployMultiLPInfra is Script {
     address constant WETH = 0x4200000000000000000000000000000000000006;
     address constant USDC = 0x31d0220469e10c4E71834a79b1f276d740d3768F;
 
-    int256 constant LIQUIDITY_DELTA = 1e9; // Fits ~32 USDC balance (2e9 * 3 needed ~36 USDC)
+    int256 constant LIQUIDITY_DELTA = 7e8; // Fits ~14 USDC balance (1e9 * 3 needed ~18 USDC)
 
     function run() external {
         uint256 pk = vm.envOr("PRIVATE_KEY", uint256(0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80));

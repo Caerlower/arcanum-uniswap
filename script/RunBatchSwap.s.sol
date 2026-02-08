@@ -16,9 +16,9 @@ import {IERC20Minimal} from "@uniswap/v4-core/src/interfaces/external/IERC20Mini
 contract RunBatchSwap is Script {
     using PoolIdLibrary for PoolKey;
 
+    uint160 constant SQRT_PRICE_2_1 = 112045541949572279837463876454;
     uint160 constant SQRT_PRICE_4_1 = 158456325028528675187087900672;
-    /// @dev For zeroForOne=false: price moves down; 2nd swap needs lower limit (pool price dropped after 1st)
-    uint160 constant SQRT_PRICE_LIMIT_MIN = 4295128740; // TickMath.MIN_SQRT_PRICE + 1
+    /// @dev For zeroForOne=false: limit must be > current; stay within liquidity range (-120..120).
 
     address constant WETH = 0x4200000000000000000000000000000000000006;
     address constant USDC = 0x31d0220469e10c4E71834a79b1f276d740d3768F;
@@ -77,9 +77,9 @@ contract RunBatchSwap is Script {
 
         vm.roll(block.number + 1); // Satisfy minDelayBlocks: 1 (1 block since creation)
 
-        // Execute both intents. Second uses SQRT_PRICE_LIMIT_MIN (pool price drops after 1st swap).
-        executor.executeIntent(id1, key, SQRT_PRICE_4_1);
-        executor.executeIntent(id2, key, SQRT_PRICE_LIMIT_MIN);
+        // Execute both intents. Use SQRT_PRICE_2_1 then SQRT_PRICE_4_1 so both stay in liquidity range (-120..120).
+        executor.executeIntent(id1, key, SQRT_PRICE_2_1);
+        executor.executeIntent(id2, key, SQRT_PRICE_4_1);
 
         vm.stopBroadcast();
         console.log("Batch executed, intent ids:", id1, id2);
